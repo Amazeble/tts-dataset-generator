@@ -3,7 +3,7 @@
 torch==2.8.0
 torchvision==0.23.0
 torchaudio==2.8.0
-moviepy==2.1.2
+moviepy==0.2.1.2
 pydub
 openai-whisper
 natsort
