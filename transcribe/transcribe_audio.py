@@ -7,7 +7,6 @@ from natsort import natsorted
 import whisper
 import torch
 
-
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -24,29 +23,26 @@ if torch.cuda.is_available():
 else:
     GPU_AVAILABLE = False
 
-
 def transcribe_audio_files(audio_dir,
                            output_csv_path="metadata.csv",
                            ljspeech=False,
                            model_name="large",
-                           language_="en"):
+                           language_="en",
+                           # MODIFICATION: This prompt forces Whisper to retain filler words
+                           initial_prompt="Umm, let me think, like, hmm... Ah, okay, ih, here's what I'm thinking."):
     """
     Transcribes all .wav files in a directory using OpenAI's Whisper model
     and saves the results to a CSV file.
-
     Args:
         audio_dir (str): Path to the directory containing the .wav audio segments.
         output_csv_path (str): Path where the output metadata CSV file will be saved.
-        model_name (str): Name of the Whisper model to use
-                          (e.g., "tiny", "base", "small", "medium", "large").
-                          Larger models are more accurate but slower and require more VRAM/RAM.
+        model_name (str): Name of the Whisper model to use.
         language_ (str): Language code for transcription.
-        
+        initial_prompt (str): Text style guide to enforce filler word retention.
     Returns:
         bool: True if transcription was successful, False otherwise
     """
     logger.info(f"Looking for .wav files in: {audio_dir}")
-
     if not os.path.isdir(audio_dir):
         logger.error(f"Directory not found: {audio_dir}")
         return False
@@ -81,11 +77,7 @@ def transcribe_audio_files(audio_dir,
         logger.error(f"Failed to load Whisper model '{model_name}'.")
         logger.error(f"Ensure the model name is correct and you have enough memory/VRAM.")
         logger.error(f"Error details: {e}")
-        logger.critical("")
-        logger.critical("")
-        logger.critical("")
-        logger.critical(f"Try --model small or you can use colab for enough memory/VRAM.")
-        logger.critical("")
+        logger.critical("Try --model small or you can use colab for enough memory/VRAM.")
         logger.debug(traceback.format_exc())
         return False
 
@@ -100,32 +92,14 @@ def transcribe_audio_files(audio_dir,
         file_path = os.path.join(audio_dir, filename)
         logger.info(f"Processing file {i+1}/{total_files}: {filename}...")
         start_time_file = time.time()
-
-        text = ""  # Default to empty string in case of errors
-
+        text = "" # Default to empty string in case of errors
+        
         try:
-            # Transcribe audio using Whisper
-            # Using verbose=False and extracting from segments to preserve filler words
-            # that Whisper might filter out in the default transcription
-            result = model.transcribe(
-                file_path, 
-                language=language_,
-                word_timestamps=True,
-                verbose=False
-            )
-            
-            # Reconstruct text from segments to preserve filler words
-            # The default result["text"] may filter out some filler words
-            # so we extract from segments directly if available
-            if "segments" in result and len(result["segments"]) > 0:
-                # Join all segment texts to preserve everything including filler words
-                text = " ".join([seg["text"].strip() for seg in result["segments"]]).strip()
-            else:
-                text = result["text"].strip()
-            
+            # MODIFICATION: Passed initial_prompt into the transcription method
+            result = model.transcribe(file_path, language=language_, initial_prompt=initial_prompt)
+            text = result["text"].strip() # Get the transcribed text and strip whitespace
             end_time_file = time.time()
             print(f"Done ({end_time_file - start_time_file:.2f}s). Transcription: '{text}'")
-
         except Exception as e:
             # Catch potential errors during transcription
             text = f"[WHISPER_ERROR]"
@@ -147,23 +121,19 @@ def transcribe_audio_files(audio_dir,
             with open(output_csv_path, 'w', encoding='utf-8') as f:
                 for i in range(len(metadata_audio_path)):
                     f.writelines(f'{metadata_audio_path[i]}|{metadata_text[i]}|{metadata_text[i]}\n')
-
             logger.info("Metadata CSV file created successfully.")
             return True
         except Exception as e:
             logger.error(f"Failed to write CSV file: {e}")
             logger.debug(traceback.format_exc())
             return False
-
     else:
-    
         # --- Write CSV Output ---
         logger.info(f"Writing transcriptions to: {output_csv_path}")
         try:
             with open(output_csv_path, 'w', encoding='utf-8') as f:
                 for i in range(len(metadata_audio_path)):
                     f.writelines(f'waws/{metadata_audio_path[i]}.wav|{metadata_text[i]}\n')
-
             logger.info("Metadata CSV file created successfully.")
             return True
         except Exception as e:
