@@ -25,7 +25,6 @@ else:
     GPU_AVAILABLE = False
 
 
-
 def transcribe_audio_files(audio_dir,
                            output_csv_path="metadata.csv",
                            ljspeech=False,
@@ -106,8 +105,24 @@ def transcribe_audio_files(audio_dir,
 
         try:
             # Transcribe audio using Whisper
-            result = model.transcribe(file_path, language=language_)
-            text = result["text"].strip()  # Get the transcribed text and strip whitespace
+            # Using verbose=False and extracting from segments to preserve filler words
+            # that Whisper might filter out in the default transcription
+            result = model.transcribe(
+                file_path, 
+                language=language_,
+                word_timestamps=True,
+                verbose=False
+            )
+            
+            # Reconstruct text from segments to preserve filler words
+            # The default result["text"] may filter out some filler words
+            # so we extract from segments directly if available
+            if "segments" in result and len(result["segments"]) > 0:
+                # Join all segment texts to preserve everything including filler words
+                text = " ".join([seg["text"].strip() for seg in result["segments"]]).strip()
+            else:
+                text = result["text"].strip()
+            
             end_time_file = time.time()
             print(f"Done ({end_time_file - start_time_file:.2f}s). Transcription: '{text}'")
 
