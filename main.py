@@ -107,7 +107,7 @@ def main():
     result = transcribe_audio_files(
         audio_dir="MyTTSDataset/wavs",
         output_csv_path= "MyTTSDataset/metadata.csv",
-        ljspeech=args.ljspeech
+        ljspeech=args.ljspeech,
         model_name=args.model,
         language_=args.language
     )
