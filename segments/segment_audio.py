@@ -150,10 +150,7 @@ def segment_audio_flexible(input_path, output_dir, sample_rate= 22050,
             codec='pcm_s16le',  # PCM signed 16-bit little-endian codec
             ffmpeg_params=["-ac", "1"] # Force mono audio (1 channel)
         )
-        logger.info("Input is assumed to be an audio file.")
 
-    metadata = torchaudio.info(audio_path_to_process)
-    print("Audio information: ", metadata)
 
     # --- Audio Processing ---
     try:
