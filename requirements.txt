@@ -1,6 +1,8 @@
-#pip install torch==2.4.1 torchvision==0.19.1 torchaudio==2.4.1 --index-url https://download.pytorch.org/whl/cu124
+--index-url https://download.pytorch.org/whl/cu124
+torch==2.6.0 
+torchaudio==2.6.0 
+torchvision==0.21.0 
 moviepy==2.1.2
 pydub
-openai-whisper
+faster-whisper
 natsort
-torch
