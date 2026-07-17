@@ -79,7 +79,7 @@ def extract_audio_ffmpeg_py(video_path, audio_path, sample_rate = 22050):
 
 
 
-def segment_audio_flexible(input_path, output_dir, sample_rate= 22050,
+def segment_audio_flexible(input_path, output_dir, project_name, sample_rate= 22050,
                            min_duration_s=3.0, max_duration_s=10.0,
                            silence_thresh_dbfs=-40, min_silence_len_ms=250,
                            keep_silence_ms=150,
@@ -93,6 +93,8 @@ def segment_audio_flexible(input_path, output_dir, sample_rate= 22050,
     Args:
         input_path (str): Path to the input audio or video file.
         output_dir (str): Directory where the segmented WAV files will be saved.
+        project_name (str): Name of the project for prefixing output files (e.g., Elise).
+        sample_rate (float): Audio sample rate in Hz.
         min_duration_s (float): Minimum desired length of a segment in seconds.
         max_duration_s (float): Maximum desired length of a segment in seconds.
         silence_thresh_dbfs (int): Audio level below which is considered silence (dBFS).
@@ -193,7 +195,8 @@ def segment_audio_flexible(input_path, output_dir, sample_rate= 22050,
         logger.info(f"Found {len(chunks)} potential segments based on silence.")
         logger.info(f"Filtering segments by duration ({min_duration_s:.1f}s - {max_duration_s:.1f}s)...")
 
-        saved_count = 0
+        # Get existing segment count to continue numbering
+        saved_count = get_existing_segment_count(output_dir, project_name)
         skipped_too_short = 0
         skipped_too_long = 0
 
@@ -215,7 +218,7 @@ def segment_audio_flexible(input_path, output_dir, sample_rate= 22050,
 
             # Save the valid segment
             saved_count += 1
-            output_filename = f"segment_{saved_count}.wav"  # Use a different prefix
+            output_filename = f"{project_name}_{saved_count:04d}.wav"
             output_path = os.path.join(output_dir, output_filename)
             logger.debug(f"  Segment {saved_count} added {padding_needed/1000:.2f}s silence")
             logger.info(f"  Saving segment {saved_count} ({chunk_duration_s + (padding_needed/1000):.2f}s): {output_path}")
@@ -227,7 +230,7 @@ def segment_audio_flexible(input_path, output_dir, sample_rate= 22050,
                 logger.debug(traceback.format_exc())
 
         logger.info("\nProcessing Complete!")
-        logger.info(f"  Saved {saved_count} segments.")
+        logger.info(f"  Saved {saved_count} segments total.")
         logger.info(f"  Skipped {skipped_too_short} segments (duration < {min_duration_s:.1f}s).")
         logger.info(f"  Skipped {skipped_too_long} segments (duration > {max_duration_s:.1f}s).")
         
@@ -245,4 +248,32 @@ def segment_audio_flexible(input_path, output_dir, sample_rate= 22050,
                 os.remove(audio_path_to_process)
             except Exception as e:
                 logger.warning(f"Could not delete temporary file {audio_path_to_process}: {e}")
+
+
+def get_existing_segment_count(output_dir, project_name):
+    """
+    Count existing segments with the given project prefix to continue numbering.
+    
+    Args:
+        output_dir (str): Directory to check for existing segments.
+        project_name (str): Project name prefix to look for.
+    
+    Returns:
+        int: The highest existing segment number, or 0 if none exist.
+    """
+    if not os.path.exists(output_dir):
+        return 0
+    
+    import re
+    pattern = re.compile(rf'^{re.escape(project_name)}_(\d{{4}})\.wav$')
+    max_num = 0
+    
+    for filename in os.listdir(output_dir):
+        match = pattern.match(filename)
+        if match:
+            num = int(match.group(1))
+            if num > max_num:
+                max_num = num
+    
+    return max_num
 

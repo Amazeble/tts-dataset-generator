@@ -33,6 +33,8 @@ def setup_argparse():
     
     parser.add_argument('--file', '-f', type=str, required=True, 
                               help="Input audio or video file path")
+    parser.add_argument('--project', '-p', type=str, required=True,
+                              help="Project name (e.g., Elise). Creates ./MyTTSDataset/{project}/ structure")
     parser.add_argument("--min-duration", type=float, default=3.0,
                               help="Minimum segment duration in seconds")
     parser.add_argument("--max-duration", type=float, default=10.0,
@@ -84,13 +86,15 @@ def main():
     logger.info("Running in PROCESS")
     logger.info("Running with default configuration")
     logger.info(f"Input file: {args.file}")
+    logger.info(f"Project: {args.project}")
     logger.info(f"Language: {args.language}")
     logger.info(f"Whisper model: {args.model}")
     
     # First segment
     result = segment_audio_flexible(
         input_path=args.file,
-        output_dir="MyTTSDataset/wavs",
+        output_dir=f"MyTTSDataset/{args.project}/wavs",
+        project_name=args.project,
         sample_rate=args.sample_rate,
         min_duration_s=args.min_duration,
         max_duration_s=args.max_duration,
@@ -105,8 +109,8 @@ def main():
             
         # Then transcribe
     result = transcribe_audio_files(
-        audio_dir="MyTTSDataset/wavs",
-        output_csv_path= "MyTTSDataset/metadata.csv",
+        audio_dir=f"MyTTSDataset/{args.project}/wavs",
+        output_csv_path= f"MyTTSDataset/{args.project}/metadata.csv",
         ljspeech=args.ljspeech,
         model_name=args.model,
         language_=args.language
