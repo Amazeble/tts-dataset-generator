@@ -51,7 +51,7 @@ scoop install ffmpeg
 
 ```bash
 # Clone this repository
-git clone https://github.com/gokhaneraslan/tts-dataset-generator.git
+git clone https://github.com/amazeble/tts-dataset-generator.git
 cd tts-dataset-generator
 
 # Install dependencies
