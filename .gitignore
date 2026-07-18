@@ -4,32 +4,25 @@ __pycache__/
 *.pyc
 *.pyo
 *.pyd
-
-# Dependencies
-.venv/
+.Python
 venv/
-env/
+.venv/
 .env
 .env.local
 .env.*
 
-# Build artifacts
-dist/
-build/
-*.egg-info/
+# Jupyter Notebook
+.ipynb_checkpoints/
+*.ipynb
+
+# Colab specific
+colab/*.ipynb
 
 # Logs
 *.log
-
-# Coverage
-.coverage
-coverage/
-htmlcov/
 
 # Temporary files
 *.tmp
 *.swp
 *~
-.DS_Store
-Thumbs.db
 ```
