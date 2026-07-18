@@ -4,6 +4,7 @@ import logging
 import traceback
 from segments.segment_audio import segment_audio_flexible
 from transcribe.transcribe_audio import transcribe_audio_files
+from config import Config
 
 # Configure logging
 logging.basicConfig(
@@ -72,9 +73,11 @@ def main():
     
     args = setup_argparse()
     
-    # Update logging level based on arguments
-    if hasattr(args, 'log_level'):
-        logger.setLevel(getattr(logging, args.log_level))
+    # Create config from argparse
+    config = Config.from_argparse(args)
+    
+    # Update logging level based on config
+    logger.setLevel(getattr(logging, config.log_level))
         
     # Display banner
     print("""
@@ -87,23 +90,26 @@ def main():
     
     logger.info("Running in PROCESS")
     logger.info("Running with default configuration")
-    logger.info(f"Input file: {args.file}")
-    logger.info(f"Project: {args.project}")
-    logger.info(f"Base Directory: {args.base_dir}")
-    logger.info(f"Language: {args.language}")
-    logger.info(f"Whisper model: {args.model}")
+    logger.info(f"Input file: {config.input_file_path}")
+    logger.info(f"Project: {config.project_name}")
+    logger.info(f"Base Directory: {config.base_directory}")
+    logger.info(f"Language: {config.language}")
+    logger.info(f"Whisper model: {config.whisper_model}")
+    
+    # Get output directories from config
+    audio_output_dir, metadata_output_path = config.get_output_dirs()
     
     # First segment
     result = segment_audio_flexible(
-        input_path=args.file,
-        output_dir=f"{args.base_dir}/{args.project}/wavs",
-        project_name=args.project,
-        sample_rate=args.sample_rate,
-        min_duration_s=args.min_duration,
-        max_duration_s=args.max_duration,
-        silence_thresh_dbfs=args.silence_threshold,
-        min_silence_len_ms=args.min_silence_len,
-        keep_silence_ms=args.keep_silence
+        input_path=config.input_file_path,
+        output_dir=audio_output_dir,
+        project_name=config.project_name,
+        sample_rate=config.sample_rate,
+        min_duration_s=config.min_duration,
+        max_duration_s=config.max_duration,
+        silence_thresh_dbfs=config.silence_threshold,
+        min_silence_len_ms=config.min_silence_len,
+        keep_silence_ms=config.keep_silence
     )
     
     if not result:
@@ -112,11 +118,11 @@ def main():
             
         # Then transcribe
     result = transcribe_audio_files(
-        audio_dir=f"{args.base_dir}/{args.project}/wavs",
-        output_csv_path= f"{args.base_dir}/{args.project}/metadata.csv",
-        ljspeech=args.ljspeech,
-        model_name=args.model,
-        language_=args.language
+        audio_dir=audio_output_dir,
+        output_csv_path=metadata_output_path,
+        ljspeech=config.ljspeech,
+        model_name=config.whisper_model,
+        language_=config.language
     )
     
     if not result:
