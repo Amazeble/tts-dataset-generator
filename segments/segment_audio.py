@@ -140,17 +140,15 @@ def segment_audio_flexible(input_path, output_dir, sample_rate= 22050,
                 os.remove(temp_audio_filename)
             return False
     else:
-        # Assume it's an audio file pydub can handle
-        audio = AudioFileClip(input_path)
-        audio_path_to_process = temp_audio_filename
-        audio.write_audiofile(
-            audio_path_to_process,
-            fps=sample_rate,          # Sample rate
-            nbytes=2,           # Bytes per sample (2 for 16-bit)
-            codec='pcm_s16le',  # PCM signed 16-bit little-endian codec
-            ffmpeg_params=["-ac", "1"] # Force mono audio (1 channel)
-        )
+        # Assume it's an audio file - use ffmpeg-python for robust extraction
         logger.info("Input is assumed to be an audio file.")
+        audio_path_to_process = temp_audio_filename
+        # Use the existing ffmpeg-based extraction function for reliability
+        extract_audio_ffmpeg_py(input_path, audio_path_to_process, sample_rate)
+        if not os.path.exists(audio_path_to_process):
+            logger.error("Failed to extract audio from input file.")
+            return False
+        is_temporary_audio = True
 
     metadata = torchaudio.info(audio_path_to_process)
     print("Audio information: ", metadata)
