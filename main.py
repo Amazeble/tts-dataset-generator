@@ -2,6 +2,8 @@ import sys
 import argparse
 import logging
 import traceback
+import os
+from pathlib import Path
 from segments.segment_audio import segment_audio_flexible
 from transcribe.transcribe_audio import transcribe_audio_files
 from config import Config
@@ -19,7 +21,6 @@ logging.basicConfig(
 logger = logging.getLogger("tts_dataset_generator")
 
 
-
 def setup_argparse():
     """
     Set up command-line argument parsing.
@@ -32,8 +33,10 @@ def setup_argparse():
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
     
+    # Single argument that accepts both file or directory
     parser.add_argument('--file', '-f', type=str, required=True, 
-                              help="Input audio or video file path")
+                          help="Input audio/video file path or directory containing audio/video files")
+    
     parser.add_argument('--project', '-p', type=str, required=True,
                               help="Project name (e.g., Elise). Creates ./MyTTSDataset/{project}/ structure")
     parser.add_argument('--base-dir', '-b', type=str, default="MyTTSDataset",
@@ -99,35 +102,99 @@ def main():
     # Get output directories from config
     audio_output_dir, metadata_output_path = config.get_output_dirs()
     
-    # First segment
-    result = segment_audio_flexible(
-        input_path=config.input_file_path,
-        output_dir=audio_output_dir,
-        project_name=config.project_name,
-        sample_rate=config.sample_rate,
-        min_duration_s=config.min_duration,
-        max_duration_s=config.max_duration,
-        silence_thresh_dbfs=config.silence_threshold,
-        min_silence_len_ms=config.min_silence_len,
-        keep_silence_ms=config.keep_silence
-    )
+    # Determine if input is a directory or single file
+    input_path = Path(args.file)
     
-    if not result:
-        logger.error("Segmentation failed. Stopping process.")
-        sys.exit(1)
+    if input_path.is_dir():
+        # Process directory of audio/video files
+        input_dir = input_path
+        if not input_dir.is_dir():
+            logger.error(f"Input directory not found: {input_dir}")
+            sys.exit(1)
+        
+        # Supported audio/video extensions
+        supported_extensions = {'.mp3', '.wav', '.flac', '.ogg', '.m4a', '.aac', 
+                               '.mp4', '.avi', '.mov', '.mkv', '.flv', '.wmv'}
+        
+        # Find all audio/video files in directory
+        input_files = [f for f in input_dir.iterdir() 
+                       if f.is_file() and f.suffix.lower() in supported_extensions]
+        
+        if not input_files:
+            logger.error(f"No supported audio/video files found in {input_dir}")
+            sys.exit(1)
+        
+        logger.info(f"Found {len(input_files)} files to process in directory")
+        
+        # Process each file
+        for input_file in sorted(input_files):
+            logger.info(f"\n{'='*60}")
+            logger.info(f"Processing file: {input_file}")
+            logger.info(f"{'='*60}")
             
+            result = segment_audio_flexible(
+                input_path=str(input_file),
+                output_dir=audio_output_dir,
+                project_name=config.project_name,
+                sample_rate=config.sample_rate,
+                min_duration_s=config.min_duration,
+                max_duration_s=config.max_duration,
+                silence_thresh_dbfs=config.silence_threshold,
+                min_silence_len_ms=config.min_silence_len,
+                keep_silence_ms=config.keep_silence
+            )
+            
+            if not result:
+                logger.warning(f"Segmentation failed for {input_file}, continuing with next file...")
+        
+        # After processing all files, transcribe all segments
+        logger.info("\nAll files processed. Starting transcription...")
+        result = transcribe_audio_files(
+            audio_dir=audio_output_dir,
+            output_csv_path=metadata_output_path,
+            ljspeech=config.ljspeech,
+            model_name=config.whisper_model,
+            language_=config.language
+        )
+        
+        if not result:
+            logger.error("Transcription failed.")
+            sys.exit(1)
+    else:
+        # Single file mode
+        if not input_path.is_file():
+            logger.error(f"Input path does not exist: {input_path}")
+            sys.exit(1)
+        
+        # First segment
+        result = segment_audio_flexible(
+            input_path=str(input_path),
+            output_dir=audio_output_dir,
+            project_name=config.project_name,
+            sample_rate=config.sample_rate,
+            min_duration_s=config.min_duration,
+            max_duration_s=config.max_duration,
+            silence_thresh_dbfs=config.silence_threshold,
+            min_silence_len_ms=config.min_silence_len,
+            keep_silence_ms=config.keep_silence
+        )
+        
+        if not result:
+            logger.error("Segmentation failed. Stopping process.")
+            sys.exit(1)
+                
         # Then transcribe
-    result = transcribe_audio_files(
-        audio_dir=audio_output_dir,
-        output_csv_path=metadata_output_path,
-        ljspeech=config.ljspeech,
-        model_name=config.whisper_model,
-        language_=config.language
-    )
-    
-    if not result:
-        logger.error("Transcription failed.")
-        sys.exit(1)
+        result = transcribe_audio_files(
+            audio_dir=audio_output_dir,
+            output_csv_path=metadata_output_path,
+            ljspeech=config.ljspeech,
+            model_name=config.whisper_model,
+            language_=config.language
+        )
+        
+        if not result:
+            logger.error("Transcription failed.")
+            sys.exit(1)
         
     # Print some help information
     logger.info("\n--- IMPORTANT NOTES ---")
