@@ -126,6 +126,12 @@ def main():
         
         logger.info(f"Found {len(input_files)} files to process in directory")
         
+        # List all files that will be processed
+        logger.info("\n--- Files to Process ---")
+        for i, f in enumerate(sorted(input_files), 1):
+            logger.info(f"{i}. {f.name}")
+        logger.info("------------------------\n")
+        
         # Process each file
         for input_file in sorted(input_files):
             logger.info(f"\n{'='*60}")
