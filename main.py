@@ -68,12 +68,19 @@ def setup_argparse():
                               help="Duration threshold in seconds for merging short segments (default: 2.0)")
     parser.add_argument("--measure", type=str, default=None,
                               help="Measure total length and silence period of audio file(s). Accepts a single file path or directory containing audio/video files")
+    parser.add_argument("--skip-segments", action="store_true", default=False,
+                              help="Skip segmentation and run directly to transcript")
+    parser.add_argument("--skip-transcript", action="store_true", default=False,
+                              help="Only run segmentation, skip transcription")
+    parser.add_argument("--merge-short-segments-only", action="store_true", default=False,
+                              help="Only run merge short segments operation")
     
 
     args = parser.parse_args()
     
     # Validate required arguments based on mode
-    if not args.measure:
+    # Skip validation for skip-segments mode since segments should already exist
+    if not args.measure and not args.skip_segments:
         if not args.file:
             parser.error("the following arguments are required: --file/-f (or use --measure for measurement mode)")
         if not args.project:
@@ -177,6 +184,212 @@ def main():
     # Determine if input is a directory or single file
     input_path = Path(args.file)
     
+    # Handle --merge-short-segments-only mode
+    if args.merge_short_segments_only:
+        from segments.segment_audio import merge_short_segments
+        logger.info("\n--- Merge Short Segments Only Mode ---")
+        
+        if input_path.is_dir():
+            input_dir = input_path
+            if not input_dir.is_dir():
+                logger.error(f"Input directory not found: {input_dir}")
+                sys.exit(1)
+            
+            supported_extensions = {'.mp3', '.wav', '.flac', '.ogg', '.m4a', '.aac', 
+                                   '.mp4', '.avi', '.mov', '.mkv', '.flv', '.wmv'}
+            
+            input_files = [f for f in input_dir.iterdir() 
+                           if f.is_file() and f.suffix.lower() in supported_extensions]
+            
+            if not input_files:
+                logger.error(f"No supported audio/video files found in {input_dir}")
+                sys.exit(1)
+            
+            logger.info(f"Found {len(input_files)} files to process in directory")
+            
+            for input_file in sorted(input_files):
+                logger.info(f"\n{'='*60}")
+                logger.info(f"Processing file: {input_file}")
+                logger.info(f"{'='*60}")
+                
+                result = segment_audio_flexible(
+                    input_path=str(input_file),
+                    output_dir=audio_output_dir,
+                    project_name=config.project_name,
+                    sample_rate=config.sample_rate,
+                    min_duration_s=config.min_duration,
+                    max_duration_s=config.max_duration,
+                    silence_thresh_dbfs=config.silence_threshold,
+                    min_silence_len_ms=config.min_silence_len,
+                    keep_silence_ms=config.keep_silence
+                )
+                
+                if not result:
+                    logger.warning(f"Segmentation failed for {input_file}, continuing with next file...")
+        else:
+            if not input_path.is_file():
+                logger.error(f"Input path does not exist: {input_path}")
+                sys.exit(1)
+            
+            result = segment_audio_flexible(
+                input_path=str(input_path),
+                output_dir=audio_output_dir,
+                project_name=config.project_name,
+                sample_rate=config.sample_rate,
+                min_duration_s=config.min_duration,
+                max_duration_s=config.max_duration,
+                silence_thresh_dbfs=config.silence_threshold,
+                min_silence_len_ms=config.min_silence_len,
+                keep_silence_ms=config.keep_silence
+            )
+            
+            if not result:
+                logger.error("Segmentation failed. Stopping process.")
+                sys.exit(1)
+        
+        # Only merge short segments
+        logger.info("\nMerging short segments...")
+        merge_result = merge_short_segments(
+            audio_dir=audio_output_dir,
+            project_name=config.project_name,
+            min_duration_threshold=config.merge_threshold
+        )
+        if not merge_result:
+            logger.warning("Merging short segments encountered issues.")
+        
+        logger.info("\nMerge short segments operation completed.")
+        return
+    
+    # Handle --skip-transcript mode (only run segmentation)
+    if args.skip_transcript:
+        logger.info("\n--- Segmentation Only Mode (Skipping Transcription) ---")
+        
+        if input_path.is_dir():
+            input_dir = input_path
+            if not input_dir.is_dir():
+                logger.error(f"Input directory not found: {input_dir}")
+                sys.exit(1)
+            
+            supported_extensions = {'.mp3', '.wav', '.flac', '.ogg', '.m4a', '.aac', 
+                                   '.mp4', '.avi', '.mov', '.mkv', '.flv', '.wmv'}
+            
+            input_files = [f for f in input_dir.iterdir() 
+                           if f.is_file() and f.suffix.lower() in supported_extensions]
+            
+            if not input_files:
+                logger.error(f"No supported audio/video files found in {input_dir}")
+                sys.exit(1)
+            
+            logger.info(f"Found {len(input_files)} files to process in directory")
+            
+            for input_file in sorted(input_files):
+                logger.info(f"\n{'='*60}")
+                logger.info(f"Processing file: {input_file}")
+                logger.info(f"{'='*60}")
+                
+                result = segment_audio_flexible(
+                    input_path=str(input_file),
+                    output_dir=audio_output_dir,
+                    project_name=config.project_name,
+                    sample_rate=config.sample_rate,
+                    min_duration_s=config.min_duration,
+                    max_duration_s=config.max_duration,
+                    silence_thresh_dbfs=config.silence_threshold,
+                    min_silence_len_ms=config.min_silence_len,
+                    keep_silence_ms=config.keep_silence
+                )
+                
+                if not result:
+                    logger.warning(f"Segmentation failed for {input_file}, continuing with next file...")
+            
+            # Merge short segments if enabled
+            if config.merge_short_segments:
+                from segments.segment_audio import merge_short_segments
+                logger.info("\nMerging short segments...")
+                merge_result = merge_short_segments(
+                    audio_dir=audio_output_dir,
+                    project_name=config.project_name,
+                    min_duration_threshold=config.merge_threshold
+                )
+                if not merge_result:
+                    logger.warning("Merging short segments encountered issues.")
+        else:
+            if not input_path.is_file():
+                logger.error(f"Input path does not exist: {input_path}")
+                sys.exit(1)
+            
+            result = segment_audio_flexible(
+                input_path=str(input_path),
+                output_dir=audio_output_dir,
+                project_name=config.project_name,
+                sample_rate=config.sample_rate,
+                min_duration_s=config.min_duration,
+                max_duration_s=config.max_duration,
+                silence_thresh_dbfs=config.silence_threshold,
+                min_silence_len_ms=config.min_silence_len,
+                keep_silence_ms=config.keep_silence
+            )
+            
+            if not result:
+                logger.error("Segmentation failed. Stopping process.")
+                sys.exit(1)
+            
+            # Merge short segments if enabled
+            if config.merge_short_segments:
+                from segments.segment_audio import merge_short_segments
+                logger.info("\nMerging short segments...")
+                merge_result = merge_short_segments(
+                    audio_dir=audio_output_dir,
+                    project_name=config.project_name,
+                    min_duration_threshold=config.merge_threshold
+                )
+                if not merge_result:
+                    logger.warning("Merging short segments encountered issues.")
+        
+        logger.info("\nSegmentation completed successfully.")
+        return
+    
+    # Handle --skip-segments mode (run directly to transcript)
+    if args.skip_segments:
+        logger.info("\n--- Transcription Only Mode (Skipping Segmentation) ---")
+        
+        # Get base directory and project name from args or use defaults
+        base_dir = args.base_dir if args.base_dir else "MyTTSDataset"
+        project_name = args.project if args.project else ""
+        
+        audio_output_dir = os.path.join(base_dir, project_name, "wavs")
+        metadata_output_path = os.path.join(base_dir, project_name, "metadata.csv")
+        
+        # Merge short segments if enabled before transcription
+        if config.merge_short_segments:
+            from segments.segment_audio import merge_short_segments
+            logger.info("\nMerging short segments before transcription...")
+            merge_result = merge_short_segments(
+                audio_dir=audio_output_dir,
+                project_name=project_name,
+                min_duration_threshold=config.merge_threshold
+            )
+            if not merge_result:
+                logger.warning("Merging short segments encountered issues, continuing with transcription...")
+        
+        # Transcribe existing segments
+        logger.info("\nStarting transcription of existing segments...")
+        result = transcribe_audio_files(
+            audio_dir=audio_output_dir,
+            output_csv_path=metadata_output_path,
+            ljspeech=config.ljspeech,
+            model_name=config.whisper_model,
+            language_=config.language
+        )
+        
+        if not result:
+            logger.error("Transcription failed.")
+            sys.exit(1)
+        
+        logger.info("\nTranscription completed successfully.")
+        return
+    
+    # Normal mode: run both segmentation and transcription
     if input_path.is_dir():
         # Process directory of audio/video files
         input_dir = input_path
