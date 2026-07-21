@@ -28,7 +28,9 @@ class Config:
         whisper_model: str = "large",
         language: str = "en",
         ljspeech: bool = True,
-        log_level: str = "INFO"
+        log_level: str = "INFO",
+        merge_short_segments: bool = False,
+        merge_threshold: float = 2.0
     ):
         """
         Initialize configuration with default or custom values.
@@ -47,6 +49,8 @@ class Config:
             language: Language code for transcription
             ljspeech: Whether to use LJSpeech format
             log_level: Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+            merge_short_segments: Whether to merge segments shorter than threshold
+            merge_threshold: Duration threshold (seconds) for merging short segments
         """
         self.project_name = project_name
         self.base_directory = base_directory
@@ -61,6 +65,8 @@ class Config:
         self.language = language
         self.ljspeech = ljspeech
         self.log_level = log_level
+        self.merge_short_segments = merge_short_segments
+        self.merge_threshold = merge_threshold
     
     @classmethod
     def from_colab_step0(cls) -> 'Config':
@@ -82,6 +88,8 @@ class Config:
             - language
             - ljspeech
             - log_level
+            - merge_short_segments
+            - merge_threshold
         
         Returns:
             Config: Configuration instance with Colab variables
@@ -101,7 +109,9 @@ class Config:
                 whisper_model=whisper_model,
                 language=language,
                 ljspeech=ljspeech,
-                log_level=log_level
+                log_level=log_level,
+                merge_short_segments=merge_short_segments if 'merge_short_segments' in locals() else False,
+                merge_threshold=merge_threshold if 'merge_threshold' in locals() else 2.0
             )
         except NameError as e:
             raise RuntimeError(
@@ -148,7 +158,9 @@ class Config:
             whisper_model=args.model,
             language=args.language,
             ljspeech=args.ljspeech,
-            log_level=args.log_level
+            log_level=args.log_level,
+            merge_short_segments=args.merge_short_segments,
+            merge_threshold=args.merge_threshold
         )
     
     def to_dict(self) -> Dict[str, Any]:
@@ -171,7 +183,9 @@ class Config:
             "whisper_model": self.whisper_model,
             "language": self.language,
             "ljspeech": self.ljspeech,
-            "log_level": self.log_level
+            "log_level": self.log_level,
+            "merge_short_segments": self.merge_short_segments,
+            "merge_threshold": self.merge_threshold
         }
     
     def save_to_json(self, config_path: str) -> None:
