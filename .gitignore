@@ -4,6 +4,11 @@
 __pycache__/
 *.o
 *.obj
+*.exe
+*.dll
+*.so
+*.a
+*.out
 dist/
 build/
 target/
@@ -25,7 +30,7 @@ node_modules/
 # Environment
 .env
 .env.local
-*.env.*
+.env.*
 
 # Editors
 .vscode/
