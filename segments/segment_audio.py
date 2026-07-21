@@ -239,7 +239,7 @@ def segment_audio_flexible(input_path, output_dir, project_name, sample_rate= 22
         logger.info(f"  Saved {saved_count} segments total.")
         logger.info(f"  Skipped {skipped_too_short} segments (duration < {min_duration_s:.1f}s).")
         logger.info(f"  Skipped {skipped_too_long} segments (duration > {max_duration_s:.1f}s).")
-        
+
         return saved_count > 0  # Return True if we saved any segments
 
     except Exception as e:
@@ -259,125 +259,141 @@ def segment_audio_flexible(input_path, output_dir, project_name, sample_rate= 22
 def merge_short_segments(audio_dir, project_name, min_duration_threshold=2.0):
     """
     Merge all segmented audio files that are less than min_duration_threshold seconds
-    with the next file in sequence.
-    
+    with the next file in sequence. Repeats until no segments below threshold remain.
+
     Args:
         audio_dir (str): Directory containing the segmented WAV files.
         project_name (str): Project name prefix to look for.
         min_duration_threshold (float): Minimum duration threshold in seconds.
                                         Segments shorter than this will be merged with the next one.
-    
+
     Returns:
         bool: True if merging was successful, False otherwise
     """
     import re
     from pydub import AudioSegment
-    
+
     logger.info(f"Checking for segments shorter than {min_duration_threshold}s to merge...")
-    
+
     if not os.path.exists(audio_dir):
         logger.error(f"Audio directory not found: {audio_dir}")
         return False
-    
+
     # Find all wav files matching the project pattern
     pattern = re.compile(rf'^{re.escape(project_name)}_(\d{{4}})\.wav$')
-    wav_files = []
-    
-    for filename in os.listdir(audio_dir):
-        match = pattern.match(filename)
-        if match:
-            num = int(match.group(1))
-            wav_files.append((num, filename))
-    
-    # Sort by number
-    wav_files.sort(key=lambda x: x[0])
-    
-    if len(wav_files) < 2:
-        logger.info("Less than 2 segments found, no merging needed.")
-        return True
-    
-    # Identify segments to merge (those shorter than threshold)
-    segments_to_merge = []
-    for num, filename in wav_files:
-        file_path = os.path.join(audio_dir, filename)
-        try:
-            audio = AudioSegment.from_file(file_path)
-            duration_s = len(audio) / 1000.0
-            if duration_s < min_duration_threshold:
-                segments_to_merge.append(num)
-                logger.info(f"  Segment {filename} ({duration_s:.2f}s) is shorter than {min_duration_threshold}s - will merge with next")
-        except Exception as e:
-            logger.warning(f"Could not read {filename}: {e}")
-    
-    if not segments_to_merge:
-        logger.info(f"No segments shorter than {min_duration_threshold}s found. No merging needed.")
-        return True
-    
-    logger.info(f"Found {len(segments_to_merge)} segments to merge.")
-    
-    # Process merges from highest to lowest to avoid index shifting issues
-    segments_to_merge.sort(reverse=True)
-    
-    for seg_num in segments_to_merge:
-        current_file = f"{project_name}_{seg_num:04d}.wav"
-        next_file = f"{project_name}_{seg_num + 1:04d}.wav"
-        
-        current_path = os.path.join(audio_dir, current_file)
-        next_path = os.path.join(audio_dir, next_file)
-        
-        # Check if next file exists
-        if not os.path.exists(next_path):
-            logger.warning(f"Cannot merge {current_file} - next file {next_file} does not exist")
-            continue
-        
-        try:
-            # Load both segments
-            current_audio = AudioSegment.from_file(current_path)
-            next_audio = AudioSegment.from_file(next_path)
-            
-            # Concatenate them
-            merged_audio = current_audio + next_audio
-            
-            # Save merged audio to the next file
-            merged_audio.export(next_path, format="wav")
-            logger.info(f"  Merged {current_file} + {next_file} -> {next_file} ({len(merged_audio)/1000:.2f}s)")
-            
-            # Remove the short segment
-            os.remove(current_path)
-            logger.info(f"  Removed {current_file}")
-            
-        except Exception as e:
-            logger.error(f"Failed to merge {current_file} with {next_file}: {e}")
-            logger.debug(traceback.format_exc())
-    
-    logger.info("Merging complete.")
-    return True
+
+    def get_sorted_wav_files():
+        """Get sorted list of (num, filename) tuples"""
+        wav_files = []
+        for filename in os.listdir(audio_dir):
+            match = pattern.match(filename)
+            if match:
+                num = int(match.group(1))
+                wav_files.append((num, filename))
+        wav_files.sort(key=lambda x: x[0])
+        return wav_files
+
+    iteration = 0
+    while True:
+        iteration += 1
+        wav_files = get_sorted_wav_files()
+
+        if len(wav_files) < 2:
+            if iteration == 1:
+                logger.info("Less than 2 segments found, no merging needed.")
+            return True
+
+        # Identify segments to merge (those shorter than threshold)
+        segments_to_merge = []
+        for num, filename in wav_files:
+            file_path = os.path.join(audio_dir, filename)
+            try:
+                audio = AudioSegment.from_file(file_path)
+                duration_s = len(audio) / 1000.0
+                if duration_s < min_duration_threshold:
+                    segments_to_merge.append(num)
+                    if iteration == 1:
+                        logger.info(f"  Segment {filename} ({duration_s:.2f}s) is shorter than {min_duration_threshold}s - will merge with next")
+            except Exception as e:
+                logger.warning(f"Could not read {filename}: {e}")
+
+        if not segments_to_merge:
+            if iteration == 1:
+                logger.info(f"No segments shorter than {min_duration_threshold}s found. No merging needed.")
+            else:
+                logger.info(f"Iteration {iteration}: No more segments below threshold.")
+            return True
+
+        logger.info(f"Iteration {iteration}: Found {len(segments_to_merge)} segments to merge.")
+
+        # Process merges from LOWEST to HIGHEST order
+        # This ensures we always merge with an existing next file
+        segments_to_merge.sort()
+
+        for seg_num in segments_to_merge:
+            current_file = f"{project_name}_{seg_num:04d}.wav"
+            next_file = f"{project_name}_{seg_num + 1:04d}.wav"
+
+            current_path = os.path.join(audio_dir, current_file)
+            next_path = os.path.join(audio_dir, next_file)
+
+            # Check if current file still exists (might have been merged already)
+            if not os.path.exists(current_path):
+                logger.debug(f"Skipping {current_file} - already merged in this iteration")
+                continue
+
+            # Check if next file exists
+            if not os.path.exists(next_path):
+                logger.warning(f"Cannot merge {current_file} - next file {next_file} does not exist (this is the last segment)")
+                # If this is the last segment and it's too short, we can't merge it further
+                continue
+
+            try:
+                # Load both segments
+                current_audio = AudioSegment.from_file(current_path)
+                next_audio = AudioSegment.from_file(next_path)
+
+                # Concatenate them
+                merged_audio = current_audio + next_audio
+
+                # Save merged audio to the next file
+                merged_audio.export(next_path, format="wav")
+                logger.info(f"  Merged {current_file} + {next_file} -> {next_file} ({len(merged_audio)/1000:.2f}s)")
+
+                # Remove the short segment
+                os.remove(current_path)
+                logger.info(f"  Removed {current_file}")
+
+            except Exception as e:
+                logger.error(f"Failed to merge {current_file} with {next_file}: {e}")
+                logger.debug(traceback.format_exc())
+
+        # Continue looping to check if any merged results are still below threshold
 
 
 def get_existing_segment_count(output_dir, project_name):
     """
     Count existing segments with the given project prefix to continue numbering.
-    
+
     Args:
         output_dir (str): Directory to check for existing segments.
         project_name (str): Project name prefix to look for.
-    
+
     Returns:
         int: The highest existing segment number, or 0 if none exist.
     """
     if not os.path.exists(output_dir):
         return 0
-    
+
     import re
     pattern = re.compile(rf'^{re.escape(project_name)}_(\d{{4}})\.wav$')
     max_num = 0
-    
+
     for filename in os.listdir(output_dir):
         match = pattern.match(filename)
         if match:
             num = int(match.group(1))
             if num > max_num:
                 max_num = num
-    
-    return max_num
 
+    return max_num
