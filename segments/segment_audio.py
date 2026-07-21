@@ -250,6 +250,104 @@ def segment_audio_flexible(input_path, output_dir, project_name, sample_rate= 22
                 logger.warning(f"Could not delete temporary file {audio_path_to_process}: {e}")
 
 
+def merge_short_segments(audio_dir, project_name, min_duration_threshold=2.0):
+    """
+    Merge all segmented audio files that are less than min_duration_threshold seconds
+    with the next file in sequence.
+    
+    Args:
+        audio_dir (str): Directory containing the segmented WAV files.
+        project_name (str): Project name prefix to look for.
+        min_duration_threshold (float): Minimum duration threshold in seconds.
+                                        Segments shorter than this will be merged with the next one.
+    
+    Returns:
+        bool: True if merging was successful, False otherwise
+    """
+    import re
+    from pydub import AudioSegment
+    
+    logger.info(f"Checking for segments shorter than {min_duration_threshold}s to merge...")
+    
+    if not os.path.exists(audio_dir):
+        logger.error(f"Audio directory not found: {audio_dir}")
+        return False
+    
+    # Find all wav files matching the project pattern
+    pattern = re.compile(rf'^{re.escape(project_name)}_(\d{{4}})\.wav$')
+    wav_files = []
+    
+    for filename in os.listdir(audio_dir):
+        match = pattern.match(filename)
+        if match:
+            num = int(match.group(1))
+            wav_files.append((num, filename))
+    
+    # Sort by number
+    wav_files.sort(key=lambda x: x[0])
+    
+    if len(wav_files) < 2:
+        logger.info("Less than 2 segments found, no merging needed.")
+        return True
+    
+    # Identify segments to merge (those shorter than threshold)
+    segments_to_merge = []
+    for num, filename in wav_files:
+        file_path = os.path.join(audio_dir, filename)
+        try:
+            audio = AudioSegment.from_file(file_path)
+            duration_s = len(audio) / 1000.0
+            if duration_s < min_duration_threshold:
+                segments_to_merge.append(num)
+                logger.info(f"  Segment {filename} ({duration_s:.2f}s) is shorter than {min_duration_threshold}s - will merge with next")
+        except Exception as e:
+            logger.warning(f"Could not read {filename}: {e}")
+    
+    if not segments_to_merge:
+        logger.info(f"No segments shorter than {min_duration_threshold}s found. No merging needed.")
+        return True
+    
+    logger.info(f"Found {len(segments_to_merge)} segments to merge.")
+    
+    # Process merges from highest to lowest to avoid index shifting issues
+    segments_to_merge.sort(reverse=True)
+    
+    for seg_num in segments_to_merge:
+        current_file = f"{project_name}_{seg_num:04d}.wav"
+        next_file = f"{project_name}_{seg_num + 1:04d}.wav"
+        
+        current_path = os.path.join(audio_dir, current_file)
+        next_path = os.path.join(audio_dir, next_file)
+        
+        # Check if next file exists
+        if not os.path.exists(next_path):
+            logger.warning(f"Cannot merge {current_file} - next file {next_file} does not exist")
+            continue
+        
+        try:
+            # Load both segments
+            current_audio = AudioSegment.from_file(current_path)
+            next_audio = AudioSegment.from_file(next_path)
+            
+            # Concatenate them
+            merged_audio = current_audio + next_audio
+            
+            # Save merged audio to the next file
+            merged_audio.export(next_path, format="wav")
+            logger.info(f"  Merged {current_file} + {next_file} -> {next_file} ({len(merged_audio)/1000:.2f}s)")
+            
+            # Remove the short segment
+            os.remove(current_path)
+            logger.info(f"  Removed {current_file}")
+            
+        except Exception as e:
+            logger.error(f"Failed to merge {current_file} with {next_file}: {e}")
+            logger.debug(traceback.format_exc())
+    
+    logger.info("Merging complete.")
+    return True
+
+
 def get_existing_segment_count(output_dir, project_name):
     """
     Count existing segments with the given project prefix to continue numbering.

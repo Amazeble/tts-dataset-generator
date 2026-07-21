@@ -62,6 +62,10 @@ def setup_argparse():
                               help="Must be the same as the sampling rate of the sounds in the dataset")
     parser.add_argument("--log-level", type=str, choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
                               default="INFO", help="Set logging level")
+    parser.add_argument("--merge-short-segments", action="store_true", default=False,
+                              help="Merge audio segments shorter than threshold with the next segment")
+    parser.add_argument("--merge-threshold", type=float, default=2.0,
+                              help="Duration threshold in seconds for merging short segments (default: 2.0)")
     
 
     return parser.parse_args()
@@ -153,6 +157,18 @@ def main():
             if not result:
                 logger.warning(f"Segmentation failed for {input_file}, continuing with next file...")
         
+        # Merge short segments if enabled
+        if config.merge_short_segments:
+            from segments.segment_audio import merge_short_segments
+            logger.info("\nMerging short segments before transcription...")
+            merge_result = merge_short_segments(
+                audio_dir=audio_output_dir,
+                project_name=config.project_name,
+                min_duration_threshold=config.merge_threshold
+            )
+            if not merge_result:
+                logger.warning("Merging short segments encountered issues, continuing with transcription...")
+        
         # After processing all files, transcribe all segments
         logger.info("\nAll files processed. Starting transcription...")
         result = transcribe_audio_files(
@@ -188,6 +204,18 @@ def main():
         if not result:
             logger.error("Segmentation failed. Stopping process.")
             sys.exit(1)
+        
+        # Merge short segments if enabled
+        if config.merge_short_segments:
+            from segments.segment_audio import merge_short_segments
+            logger.info("\nMerging short segments before transcription...")
+            merge_result = merge_short_segments(
+                audio_dir=audio_output_dir,
+                project_name=config.project_name,
+                min_duration_threshold=config.merge_threshold
+            )
+            if not merge_result:
+                logger.warning("Merging short segments encountered issues, continuing with transcription...")
                 
         # Then transcribe
         result = transcribe_audio_files(
