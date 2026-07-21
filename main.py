@@ -52,9 +52,8 @@ def setup_argparse():
                               help="Minimum silence duration (ms) to mark a split point")
     parser.add_argument("--keep-silence", type=int, default=150,
                               help="Padding silence (ms) to keep at segment boundaries")
-    parser.add_argument("--model", '-m', type=str, default="large",
-                              choices=["tiny", "base", "small", "medium", "large"],
-                              help="Whisper model size (larger = more accurate but slower)")
+    parser.add_argument("--model", '-m', type=str, default="deepdml/faster-whisper-large-v3-turbo-ct2",
+                              help="Whisper model size or path (larger = more accurate but slower)")
     parser.add_argument("--language", "-l", type=str, default="en",
                               help="Language code for transcription and number conversion")
     parser.add_argument("--ljspeech", type=bool, default=True,
