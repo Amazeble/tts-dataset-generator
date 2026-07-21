@@ -35,10 +35,10 @@ def setup_argparse():
     )
     
     # Single argument that accepts both file or directory
-    parser.add_argument('--file', '-f', type=str, required=True, 
+    parser.add_argument('--file', '-f', type=str, 
                           help="Input audio/video file path or directory containing audio/video files")
     
-    parser.add_argument('--project', '-p', type=str, required=True,
+    parser.add_argument('--project', '-p', type=str,
                               help="Project name (e.g., Elise). Creates ./MyTTSDataset/{project}/ structure")
     parser.add_argument('--base-dir', '-b', type=str, default="MyTTSDataset",
                               help="Base directory for output. Default is MyTTSDataset")
@@ -71,7 +71,16 @@ def setup_argparse():
                               help="Measure total length and silence period of audio file(s). Accepts a single file path or directory containing audio/video files")
     
 
-    return parser.parse_args()
+    args = parser.parse_args()
+    
+    # Validate required arguments based on mode
+    if not args.measure:
+        if not args.file:
+            parser.error("the following arguments are required: --file/-f (or use --measure for measurement mode)")
+        if not args.project:
+            parser.error("the following arguments are required: --project/-p (or use --measure for measurement mode)")
+    
+    return args
 
 
 
