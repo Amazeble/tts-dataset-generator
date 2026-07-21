@@ -4,7 +4,8 @@ import logging
 import traceback
 import os
 from pathlib import Path
-from segments.segment_audio import segment_audio_flexible, measure_audio_and_silence
+from segments.segment_audio import segment_audio_flexible
+from segments.measure_audio import measure_audio_and_silence
 from transcribe.transcribe_audio import transcribe_audio_files
 from config import Config
 
