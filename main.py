@@ -4,7 +4,7 @@ import logging
 import traceback
 import os
 from pathlib import Path
-from segments.segment_audio import segment_audio_flexible
+from segments.segment_audio import segment_audio_flexible, measure_audio_and_silence
 from transcribe.transcribe_audio import transcribe_audio_files
 from config import Config
 
@@ -66,6 +66,8 @@ def setup_argparse():
                               help="Merge audio segments shorter than threshold with the next segment")
     parser.add_argument("--merge-threshold", type=float, default=2.0,
                               help="Duration threshold in seconds for merging short segments (default: 2.0)")
+    parser.add_argument("--measure", type=str, default=None,
+                              help="Measure total length and silence period of audio file(s). Accepts a single file path or directory containing audio/video files")
     
 
     return parser.parse_args()
@@ -79,6 +81,63 @@ def main():
     """
     
     args = setup_argparse()
+    
+    # Handle --measure mode separately
+    if args.measure:
+        measure_path = Path(args.measure)
+        
+        if measure_path.is_dir():
+            # Process directory of audio/video files
+            supported_extensions = {'.mp3', '.wav', '.flac', '.ogg', '.m4a', '.aac', 
+                                   '.mp4', '.avi', '.mov', '.mkv', '.flv', '.wmv'}
+            
+            input_files = [f for f in measure_path.iterdir() 
+                           if f.is_file() and f.suffix.lower() in supported_extensions]
+            
+            if not input_files:
+                logger.error(f"No supported audio/video files found in {measure_path}")
+                sys.exit(1)
+            
+            logger.info(f"Found {len(input_files)} files to measure in directory")
+            logger.info("\n--- Audio Measurement Results ---\n")
+            
+            total_duration_all = 0
+            total_silence_all = 0
+            
+            for input_file in sorted(input_files):
+                result = measure_audio_and_silence(str(input_file))
+                if result:
+                    total_duration_all += result['total_duration']
+                    total_silence_all += result['total_silence']
+                    logger.info(f"\nFile: {input_file.name}")
+                    logger.info(f"  Total Duration: {result['total_duration']:.2f}s")
+                    logger.info(f"  Silence Duration: {result['total_silence']:.2f}s ({result['silence_percentage']:.2f}%)")
+                    logger.info(f"  Speech Duration: {result['speech_duration']:.2f}s")
+                    logger.info(f"  Silence Periods: {result['silence_periods_count']}")
+            
+            logger.info(f"\n--- Summary ---")
+            logger.info(f"Total files processed: {len(input_files)}")
+            logger.info(f"Combined duration: {total_duration_all:.2f}s")
+            logger.info(f"Combined silence: {total_silence_all:.2f}s ({(total_silence_all/total_duration_all*100) if total_duration_all > 0 else 0:.2f}%)")
+            
+        elif measure_path.is_file():
+            # Single file mode
+            result = measure_audio_and_silence(str(measure_path))
+            if result:
+                logger.info("\n--- Audio Measurement Results ---")
+                logger.info(f"File: {measure_path.name}")
+                logger.info(f"  Total Duration: {result['total_duration']:.2f}s")
+                logger.info(f"  Silence Duration: {result['total_silence']:.2f}s ({result['silence_percentage']:.2f}%)")
+                logger.info(f"  Speech Duration: {result['speech_duration']:.2f}s")
+                logger.info(f"  Silence Periods: {result['silence_periods_count']}")
+            else:
+                logger.error("Failed to measure audio file.")
+                sys.exit(1)
+        else:
+            logger.error(f"Path does not exist: {measure_path}")
+            sys.exit(1)
+        
+        return  # Exit after measurement mode
     
     # Create config from argparse
     config = Config.from_argparse(args)
