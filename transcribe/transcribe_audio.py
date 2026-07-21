@@ -6,7 +6,9 @@ import traceback
 from natsort import natsorted
 from faster_whisper import WhisperModel
 import torch
-
+import numpy as np
+from scipy.io import wavfile
+import mediapipe as mp
 
 # Configure logging
 logging.basicConfig(
@@ -24,32 +26,65 @@ if torch.cuda.is_available():
 else:
     GPU_AVAILABLE = False
 
-
-def transcribe_audio_files(audio_dir,
-                           output_csv_path="metadata.csv",
-                           ljspeech=False,
-                           model_name="deepdml/faster-whisper-large-v3-turbo-ct2",
-                           language_="en"):
+def detect_snaps_with_google(file_path, model_path="yamnet.tflite", score_threshold=0.35):
     """
-    Transcribes all .wav files in a directory using Faster-Whisper Turbo
-    and saves the results to a CSV file.
-
-    Args:
-        audio_dir (str): Path to the directory containing the .wav audio segments.
-        output_csv_path (str): Path where the output metadata CSV file will be saved.
-        model_name (str): Name of the Faster-Whisper CT2 model repo.
-        language_ (str): Language code for transcription.
+    Uses Google's MediaPipe AI framework to pinpoint finger-snapping sounds.
+    Returns a list of timestamps (in seconds) where a finger snap was detected.
+    """
+    snap_timestamps = []
+    try:
+        # Load WAV file sample data
+        sample_rate, data = wavfile.read(file_path)
         
-    Returns:
-        bool: True if transcription was successful, False otherwise
+        # Google MediaPipe requires a float32 array
+        if data.dtype != np.float32:
+            data = data.astype(np.float32) / np.iinfo(data.dtype).max
+            
+        # Convert stereo channel tracks into a single mono track
+        if len(data.shape) > 1:
+            data = np.mean(data, axis=1)
+
+        # Initialize Google's MediaPipe Audio Classifier
+        BaseOptions = mp.tasks.BaseOptions
+        AudioClassifier = mp.tasks.audio.AudioClassifier
+        AudioClassifierOptions = mp.tasks.audio.AudioClassifierOptions
+        
+        # Restrict the model category filter to find only "Finger snapping" events
+        options = AudioClassifierOptions(
+            base_options=BaseOptions(model_asset_path=model_path),
+            running_mode=mp.tasks.audio.RunningMode.AUDIO_CLIPS,
+            category_allowlist=["Finger snapping"],
+            score_threshold=score_threshold
+        )
+        
+        with AudioClassifier.create_from_options(options) as classifier:
+            # Wrap standard array data into a dedicated MediaPipe audio block
+            media_pipe_audio = mp.tasks.audio.AudioData.create_from_array(data, sample_rate)
+            classification_result = classifier.classify(media_pipe_audio)
+            
+            # Extract timestamp tags from valid classification frame structures
+            for classification in classification_result:
+                timestamp_ms = classification.timestamp_ms
+                for category in classification.categories:
+                    if category.category_name == "Finger snapping":
+                        timestamp_sec = timestamp_ms / 1000.0
+                        snap_timestamps.append(timestamp_sec)
+                        
+        return sorted(list(set(snap_timestamps)))
+    except Exception as e:
+        logger.warning(f"Google MediaPipe snap detection bypassed for {os.path.basename(file_path)}. Detail: {e}")
+        return []
+
+def transcribe_audio_files(audio_dir, output_csv_path="metadata.csv", ljspeech=False, model_name="deepdml/faster-whisper-large-v3-turbo-ct2", language_="en"):
+    """
+    Transcribes all audio files, keeps filler words using initial prompts, 
+    and checks for finger snaps with Google AI to inject <snap> text flags.
     """
     logger.info(f"Looking for .wav files in: {audio_dir}")
-
     if not os.path.isdir(audio_dir):
         logger.error(f"Directory not found: {audio_dir}")
         return False
 
-    # Find all .wav files and sort them naturally
     try:
         wav_files = natsorted([f for f in os.listdir(audio_dir) if f.lower().endswith('.wav')])
     except Exception as e:
@@ -61,99 +96,109 @@ def transcribe_audio_files(audio_dir,
         logger.error(f"No .wav files found in {audio_dir}")
         return False
 
-    logger.info(f"Found {len(wav_files)} .wav files to transcribe.")
+    logger.info(f"Found {len(wav_files)} .wav files to process.")
 
     # --- Load Faster-Whisper Model ---
     logger.info(f"Loading Faster-Whisper model: '{model_name}'...")
-    if GPU_AVAILABLE:
-        logger.info("CUDA (GPU) available. Faster-Whisper will run on GPU.")
-        device = "cuda"
-        compute_type = "float16" # Fast execution on NVIDIA graphics cards
-    else:
-        logger.info("CUDA (GPU) not available. Faster-Whisper will run on CPU.")
-        device = "cpu"
-        compute_type = "float32" # Standard precision fallback for CPU
+    device = "cuda" if GPU_AVAILABLE else "cpu"
+    compute_type = "float16" if GPU_AVAILABLE else "float32"
 
     try:
-        # Load using Faster-Whisper interface
         model = WhisperModel(model_name, device=device, compute_type=compute_type)
-        logger.info(f"Faster-Whisper model '{model_name}' loaded successfully.")
+        logger.info(f"Faster-Whisper model loaded successfully.")
     except Exception as e:
-        logger.error(f"Failed to load Faster-Whisper model '{model_name}'.")
-        logger.error(f"Ensure the model name is correct and you have enough memory/VRAM.")
-        logger.error(f"Error details: {e}")
-        logger.critical("")
-        logger.critical(f"If you lack VRAM, try changing compute_type to 'int8' in the code.")
-        logger.critical("")
-        logger.debug(traceback.format_exc())
+        logger.error(f"Failed to load Faster-Whisper model: {e}")
         return False
 
-    # --- Transcription Process ---
+    # --- Process Files ---
     metadata_text = []
     metadata_audio_path = []
     total_files = len(wav_files)
     start_time_total = time.time()
 
-    # Process each audio file
+    # The initial prompt forces Whisper to transcribe spoken filler words
+    filler_prompt = "Umm, let me think, uh, yeah, like, ah, okay. So, um, what I mean is..."
+
     for i, filename in enumerate(wav_files):
         file_path = os.path.join(audio_dir, filename)
         logger.info(f"Processing file {i+1}/{total_files}: {filename}...")
         start_time_file = time.time()
-
-        text = ""  # Default to empty string in case of errors
-
+        
+        # 1. Use Google AI pipeline to extract the finger snap timestamps
+        snap_times = detect_snaps_with_google(file_path)
+        
         try:
-            # Transcribe audio using Faster-Whisper
-            # beam_size=5 matches standard openai whisper defaults
-            segments, info = model.transcribe(file_path, language=language_, beam_size=5)
+            # 2. Transcribe text with individual word timestamps active
+            segments, info = model.transcribe(
+                file_path, 
+                language=language_, 
+                beam_size=5,
+                initial_prompt=filler_prompt,
+                word_timestamps=True
+            )
             
-            # Reassemble all text segments generated by faster-whisper
-            text_chunks = [segment.text for segment in segments]
-            text = "".join(text_chunks).strip()
+            final_text_pieces = []
+            
+            # 3. Interweave words and <snap> tags chronologically
+            for segment in segments:
+                if segment.words:
+                    for word in segment.words:
+                        remaining_snaps = []
+                        for snap_t in snap_times:
+                            if snap_t < word.start:
+                                final_text_pieces.append("<snap>")
+                            else:
+                                remaining_snaps.append(snap_t)
+                        snap_times = remaining_snaps
+                        
+                        final_text_pieces.append(word.word.strip())
+                else:
+                    final_text_pieces.append(segment.text.strip())
+            
+            # Append trailing finger snaps that happen after the final word
+            for _ in snap_times:
+                final_text_pieces.append("<snap>")
+                
+            text = " ".join(final_text_pieces).strip()
+            text = " ".join(text.split())  # Sanitize formatting spaces
             
             end_time_file = time.time()
-            print(f"Done ({end_time_file - start_time_file:.2f}s). Transcription: '{text}'")
-
+            print(f"Done ({end_time_file - start_time_file:.2f}s). Result: '{text}'")
+            
         except Exception as e:
-            # Catch potential errors during transcription
-            text = f"[WHISPER_ERROR]"
-            end_time_file = time.time()
-            logger.error(f"Error transcribing {filename} after {end_time_file - start_time_file:.2f}s. Details: {e}")
+            text = "[WHISPER_ERROR]"
+            logger.error(f"Error processing {filename}: {e}")
             logger.debug(traceback.format_exc())
 
-        # Store the result (filename without path, transcription)
         metadata_text.append(text)
         metadata_audio_path.append(filename[:-4])
 
     end_time_total = time.time()
-    logger.info(f"Finished processing all files in {end_time_total - start_time_total:.2f} seconds.")
+    logger.info(f"Finished processing in {end_time_total - start_time_total:.2f} seconds.")
 
-    if ljspeech:
-        # --- Write CSV Output (LJSpeech Format) ---
-        logger.info(f"Writing ljspeech format transcriptions to: {output_csv_path}")
-        try:
-            with open(output_csv_path, 'w', encoding='utf-8') as f:
-                for i in range(len(metadata_audio_path)):
+    # --- Save To CSV ---
+    try:
+        with open(output_csv_path, 'w', encoding='utf-8') as f:
+            for i in range(len(metadata_audio_path)):
+                if ljspeech:
                     f.writelines(f'{metadata_audio_path[i]}|{metadata_text[i]}|{metadata_text[i]}\n')
+                else:
+                    f.writelines(f'wavs/{metadata_audio_path[i]}.wav|{metadata_text[i]}\n')
+        logger.info("Metadata CSV file created successfully.")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to write CSV file: {e}")
+        return False
 
-            logger.info("Metadata CSV file created successfully.")
-            return True
-        except Exception as e:
-            logger.error(f"Failed to write CSV file: {e}")
-            logger.debug(traceback.format_exc())
-            return False
-
+if __name__ == "__main__":
+    input_folder = "your_audio_folder_path" 
+    
+    if os.path.exists(input_folder):
+        transcribe_audio_files(
+            audio_dir=input_folder,
+            output_csv_path="metadata.csv",
+            ljspeech=True,
+            language_="en"
+        )
     else:
-        # --- Write CSV Output (Standard Format) ---
-        logger.info(f"Writing transcriptions to: {output_csv_path}")
-        try:
-            with open(output_csv_path, 'w', encoding='utf-8') as f:
-                for i in range(len(metadata_audio_path)):
-                    f.writelines(f'waws/{metadata_audio_path[i]}.wav|{metadata_text[i]}\n')
-
-            logger.info("Metadata CSV file created successfully.")
-            return True
-        except Exception as e:
-            logger.error(f"Failed to write CSV file: {e}")
-            logger.debug(traceback.format_exc())
-            return False
+        logger.warning(f"Please replace 'your_audio_folder_path' with your actual WAV file directory.")
