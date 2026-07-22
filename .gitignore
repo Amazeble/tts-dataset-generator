@@ -1,8 +1,13 @@
-# Jupyter Notebook checkpoints
+# Jupyter Notebook checkpoin
 .ipynb_checkpoints/
 
 # Colab-specific files
-colab/*.ipynb.checkpoint
+colab/*.ipynb*
+
+# Environment variables
+.env
+.env.local
+*.env.*
 
 # Python cache
 __pycache__/
@@ -10,37 +15,33 @@ __pycache__/
 *.pyo
 *.pyd
 
-# Environment variables
-.env
-.env.local
-*.env.*
-
-# IDE specific
-.vscode/
-.idea/
-*.swp
-*.swo
-
 # Logs
 *.log
 
 # Temporary files
 *.tmp
-*.temp
+*.swp
+
+# Editors
+.vscode/
+.idea/
+
+# OS generated files
+.DS_Store
+Thumbs.db
 
 # Coverage reports
 coverage/
 htmlcov/
 .coverage
 
-# Build/distribution artifacts
-dist/
-build/
-*.egg-info/
-
-# Dependencies
-node_modules/
-.venv/
+# Dependency directories
 venv/
+.venv/
+node_modules/
 .mypy_cache/
 .pytest_cache/
+dist/
+build/
+target/
+.gradle/
