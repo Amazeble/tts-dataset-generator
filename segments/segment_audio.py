@@ -89,7 +89,7 @@ def extract_audio_ffmpeg_py(video_path, audio_path, sample_rate = 22050):
 def segment_audio_flexible(input_path, output_dir, project_name, sample_rate= 22050,
                            min_duration_s=3.0, max_duration_s=10.0,
                            silence_thresh_dbfs=-40, min_silence_len_ms=250,
-                           keep_silence_ms=150,
+                           keep_silence_ms=150, keep_silent=False,
                            temp_audio_filename="_temp_extracted_audio.wav"):
     """
     Segments an audio or video file into clips of flexible duration (min_duration_s to max_duration_s),
@@ -110,6 +110,8 @@ def segment_audio_flexible(input_path, output_dir, project_name, sample_rate= 22
                                   Adjust based on pauses between sentences/phrases.
         keep_silence_ms (int): Amount of original silence (in ms) to keep at the
                                beginning/end of each chunk for natural padding.
+        keep_silent (bool): If True, do not remove any silent audio. The sum of durations
+                            of all split files will equal the original file duration.
         temp_audio_filename (str): Filename for temporarily storing extracted audio.
     """
     logger.info(f"Processing input file: {input_path}")
@@ -185,14 +187,25 @@ def segment_audio_flexible(input_path, output_dir, project_name, sample_rate= 22
         logger.info(f"    Min Silence Duration: {min_silence_len_ms} ms")
         logger.info(f"    Silence Threshold: {silence_thresh_dbfs} dBFS")
         logger.info(f"    Padding Silence: {keep_silence_ms} ms")
+        logger.info(f"    Keep Silent Mode: {keep_silent}")
 
         # Split audio based on silence
-        chunks = split_on_silence(
-            audio,
-            min_silence_len=min_silence_len_ms,
-            silence_thresh=silence_thresh_dbfs,
-            keep_silence=keep_silence_ms
-        )
+        if keep_silent:
+            # When keep_silent is True, we don't remove any silence
+            # We split the audio into fixed-size chunks without silence detection
+            original_duration_ms = len(audio)
+            logger.info(f"Original audio duration: {original_duration_ms / 1000:.2f} seconds")
+            logger.info("Keeping all silent audio - total duration will be preserved")
+            
+            # Create a single chunk containing the entire audio
+            chunks = [audio]
+        else:
+            chunks = split_on_silence(
+                audio,
+                min_silence_len=min_silence_len_ms,
+                silence_thresh=silence_thresh_dbfs,
+                keep_silence=keep_silence_ms
+            )
 
         if not chunks:
             logger.warning("No segments found based on silence detection.")
@@ -200,6 +213,55 @@ def segment_audio_flexible(input_path, output_dir, project_name, sample_rate= 22
             return False
 
         logger.info(f"Found {len(chunks)} potential segments based on silence.")
+        
+        # When keep_silent is True, we don't filter by duration or add padding
+        # We split the audio into equal parts while preserving total duration
+        if keep_silent:
+            original_duration_ms = len(audio)
+            logger.info(f"Original audio duration: {original_duration_ms / 1000:.2f} seconds")
+            logger.info("Keeping all silent audio - splitting without removing any content")
+            
+            # Get existing segment count to continue numbering
+            saved_count = get_existing_segment_count(output_dir, project_name)
+            
+            # Split the audio into segments based on max_duration_s
+            # This ensures we don't exceed the max duration while keeping all audio
+            current_pos = 0
+            segment_index = 0
+            
+            while current_pos < original_duration_ms:
+                # Calculate the end position for this segment
+                segment_end = min(current_pos + int(max_duration_s * 1000), original_duration_ms)
+                segment_duration_ms = segment_end - current_pos
+                
+                # Extract the segment
+                chunk = audio[current_pos:segment_end]
+                
+                # Save the segment without adding any padding
+                saved_count += 1
+                segment_index += 1
+                output_filename = f"{project_name}_{saved_count:04d}.wav"
+                output_path = os.path.join(output_dir, output_filename)
+                
+                chunk_duration_s = segment_duration_ms / 1000.0
+                logger.info(f"  Saving segment {segment_index} ({chunk_duration_s:.2f}s): {output_path}")
+                
+                try:
+                    # Export chunk as WAV file (standard format for TTS)
+                    chunk.export(output_path, format="wav")
+                except Exception as e:
+                    logger.error(f"Failed to save segment ({output_path}): {e}")
+                    logger.debug(traceback.format_exc())
+                
+                current_pos = segment_end
+            
+            logger.info("\nProcessing Complete!")
+            logger.info(f"  Saved {saved_count} segments total.")
+            logger.info(f"  Original duration: {original_duration_ms / 1000:.2f} seconds")
+            logger.info(f"  Total segmented duration preserved: {original_duration_ms / 1000:.2f} seconds")
+            
+            return saved_count > 0  # Return True if we saved any segments
+        
         logger.info(f"Filtering segments by duration ({min_duration_s:.1f}s - {max_duration_s:.1f}s)...")
 
         # Get existing segment count to continue numbering
