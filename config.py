@@ -30,7 +30,8 @@ class Config:
         ljspeech: bool = True,
         log_level: str = "INFO",
         merge_short_segments: bool = False,
-        merge_threshold: float = 2.0
+        merge_threshold: float = 2.0,
+        keep_all_silent: bool = False
     ):
         """
         Initialize configuration with default or custom values.
@@ -67,6 +68,7 @@ class Config:
         self.log_level = log_level
         self.merge_short_segments = merge_short_segments
         self.merge_threshold = merge_threshold
+        self.keep_all_silent = keep_all_silent
     
     @classmethod
     def from_colab_step0(cls) -> 'Config':
@@ -90,6 +92,7 @@ class Config:
             - log_level
             - merge_short_segments
             - merge_threshold
+            - keep_all_silent
         
         Returns:
             Config: Configuration instance with Colab variables
@@ -111,7 +114,8 @@ class Config:
                 ljspeech=ljspeech,
                 log_level=log_level,
                 merge_short_segments=merge_short_segments if 'merge_short_segments' in locals() else False,
-                merge_threshold=merge_threshold if 'merge_threshold' in locals() else 2.0
+                merge_threshold=merge_threshold if 'merge_threshold' in locals() else 2.0,
+                keep_all_silent=keep_all_silent if 'keep_all_silent' in locals() else False
             )
         except NameError as e:
             raise RuntimeError(
@@ -145,6 +149,11 @@ class Config:
         Returns:
             Config: Configuration instance from argparse
         """
+        # Handle keep_all_silent flag - when set, it disables keep_silence
+        keep_silence_value = args.keep_silence
+        if args.keep_all_silent:
+            keep_silence_value = 0  # Disable keep_silence when keep_all_silent is used
+        
         return cls(
             project_name=args.project,
             base_directory=args.base_dir,
@@ -153,14 +162,15 @@ class Config:
             max_duration=args.max_duration,
             silence_threshold=args.silence_threshold,
             min_silence_len=args.min_silence_len,
-            keep_silence=args.keep_silence,
+            keep_silence=keep_silence_value,
             sample_rate=args.sample_rate,
             whisper_model=args.model,
             language=args.language,
             ljspeech=args.ljspeech,
             log_level=args.log_level,
             merge_short_segments=args.merge_short_segments,
-            merge_threshold=args.merge_threshold
+            merge_threshold=args.merge_threshold,
+            keep_all_silent=args.keep_all_silent
         )
     
     def to_dict(self) -> Dict[str, Any]:
@@ -185,7 +195,8 @@ class Config:
             "ljspeech": self.ljspeech,
             "log_level": self.log_level,
             "merge_short_segments": self.merge_short_segments,
-            "merge_threshold": self.merge_threshold
+            "merge_threshold": self.merge_threshold,
+            "keep_all_silent": self.keep_all_silent
         }
     
     def save_to_json(self, config_path: str) -> None:

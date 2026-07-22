@@ -74,6 +74,8 @@ def setup_argparse():
                               help="Only run segmentation, skip transcription")
     parser.add_argument("--merge-short-segments-only", action="store_true", default=False,
                               help="Only run merge short segments operation")
+    parser.add_argument("--keep-all-silent", action="store_true", default=False,
+                              help="Keep all silent audio without removing any. The sum duration of split files will equal the original file duration. Disables --keep-silence when used.")
     
 
     args = parser.parse_args()
@@ -221,7 +223,8 @@ def main():
                     max_duration_s=config.max_duration,
                     silence_thresh_dbfs=config.silence_threshold,
                     min_silence_len_ms=config.min_silence_len,
-                    keep_silence_ms=config.keep_silence
+                    keep_silence_ms=config.keep_silence,
+                    keep_silent=config.keep_all_silent
                 )
                 
                 if not result:
@@ -240,7 +243,8 @@ def main():
                 max_duration_s=config.max_duration,
                 silence_thresh_dbfs=config.silence_threshold,
                 min_silence_len_ms=config.min_silence_len,
-                keep_silence_ms=config.keep_silence
+                keep_silence_ms=config.keep_silence,
+                keep_silent=config.keep_all_silent
             )
             
             if not result:
@@ -296,7 +300,8 @@ def main():
                     max_duration_s=config.max_duration,
                     silence_thresh_dbfs=config.silence_threshold,
                     min_silence_len_ms=config.min_silence_len,
-                    keep_silence_ms=config.keep_silence
+                    keep_silence_ms=config.keep_silence,
+                    keep_silent=config.keep_all_silent
                 )
                 
                 if not result:
@@ -327,7 +332,8 @@ def main():
                 max_duration_s=config.max_duration,
                 silence_thresh_dbfs=config.silence_threshold,
                 min_silence_len_ms=config.min_silence_len,
-                keep_silence_ms=config.keep_silence
+                keep_silence_ms=config.keep_silence,
+                keep_silent=config.keep_all_silent
             )
             
             if not result:
@@ -432,7 +438,8 @@ def main():
                 max_duration_s=config.max_duration,
                 silence_thresh_dbfs=config.silence_threshold,
                 min_silence_len_ms=config.min_silence_len,
-                keep_silence_ms=config.keep_silence
+                keep_silence_ms=config.keep_silence,
+                keep_silent=config.keep_all_silent
             )
             
             if not result:
@@ -479,7 +486,8 @@ def main():
             max_duration_s=config.max_duration,
             silence_thresh_dbfs=config.silence_threshold,
             min_silence_len_ms=config.min_silence_len,
-            keep_silence_ms=config.keep_silence
+            keep_silence_ms=config.keep_silence,
+                    keep_silent=config.keep_all_silent
         )
         
         if not result:
